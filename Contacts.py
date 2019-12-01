@@ -7,8 +7,8 @@ TO DO
 
 '''
 
-import csv, sqlite3
-
+import csv, sqlite3, os, da_utils
+os.system("cls")
 
 def _get_col_datatypes(fin):
     dr = csv.DictReader(fin) # comma is default delimiter
@@ -109,7 +109,7 @@ def createTable(dbFile, tableName, primaryKey, *cols):
 
 
 def dataAdder(caller,dbFile, table, pKeyName,pKey, **other):
-    print('~112',caller, dbFile, table, pKeyName, pKey, other)
+    # print('~112',caller, dbFile, table, pKeyName, pKey, other)
     con = sqlite3.connect(dbFile)
     cur = con.cursor()
     keyStr = ''
@@ -217,18 +217,11 @@ def addUnsubscribes(dbFile, csvFile):
             adelphiEmail = str(cur.fetchone()).strip()
             if ccGlRef != '' and adelphiEmail.upper() != 'NONE':
 
-                '''
-                TO DO TO DO TO DO
-                What about
-                The ccGlRef we have from Unsubscribes is
-                    1. Not Blank, and
-                    2. Has been found in Adelphi
-                '''
                 adelphiEmail = adelphiEmail.replace("'",'')
                 adelphiEmail = adelphiEmail.replace(",",'')
                 adelphiEmail = adelphiEmail.replace("(",'')
                 adelphiEmail = adelphiEmail.replace(")",'')
-                if adelphiEmail == ccEmail:
+                if adelphiEmail.upper() == ccEmail.upper():
                     dataAdder('addUnsubscribes','contacts.db','Output','GlRef',ccGlRef, UnsubscribedCC = 'Unsubscribed', UnsubEmail = adelphiEmail)
                 else:
                     givenName = str(row['Last name'])
@@ -239,9 +232,22 @@ def addUnsubscribes(dbFile, csvFile):
                     con.commit()
                     itemString = str(cur.fetchone())
                     if itemString.upper() == 'NONE':
-                        dataAdder('addUnsubscribes','contacts.db','UnsubsNotAdelphi','Email', ccEmail, FamilyName = str(row['First name']), GivenName = givenName, Occurences = 1, Comment ='Not found in current Bucks Adelphi')
+                        dataAdder('addUnsubscribes','contacts.db','UnsubsNotAdelphi','Email', ccEmail, GlRef = ccGlRef, FamilyName = str(row['First name']), GivenName = givenName, Occurences = 1, Comment ='Not found in current Bucks Adelphi')
                     else:
                         stmt = 'UPDATE UnsubsNotAdelphi\nSET Occurences = Occurences +1 WHERE Email = \'' + ccEmail +'\''
+            else:
+                givenName = str(row['Last name'])
+                if "'" in givenName:
+                    givenName = givenName.replace("'","''")
+                stmt = 'SELECT "ccEmail" from UnsubsNotAdelphi where "Email" = \'' +ccEmail +"'"
+                cur.execute(stmt)
+                con.commit()
+                itemString = str(cur.fetchone())
+                if itemString.upper() == 'NONE':
+                    dataAdder('addUnsubscribes','contacts.db','UnsubsNotAdelphi','Email', ccEmail, GlRef = ccGlRef, FamilyName = str(row['First name']), GivenName = givenName, Occurences = 1, Comment ='Not found in current Bucks Adelphi')
+                else:
+                    stmt = 'UPDATE UnsubsNotAdelphi\nSET Occurences = Occurences +1 WHERE Email = \'' + ccEmail +'\''
+
 
 
 def output(dbFile, table, fileName):
@@ -252,7 +258,7 @@ def output(dbFile, table, fileName):
     headers =[]
     for row in colnames:
         headers.append(row[0])
-        print(headers)
+        # print(headers)
     with open(fileName, 'w', newline = '') as outCSV:
         outWriter = csv.writer(outCSV)
         outWriter.writerow(headers)
@@ -293,7 +299,7 @@ def main():
     csvToDb("advanced_current_members_by_mshp_status.csv","contacts.db","Members")
     #csvToDb("lc_details.csv","contacts.db","Lodges")
     createTable('contacts.db','Output', 'GlRef','GlRef', 'LodgeID','FamilyName', 'GivenName', 'Address', 'Telephone',  'Email', 'EmailBounceReason', 'UnsubscribedCC', 'UnsubEmail')
-    createTable('contacts.db','UnsubsNotAdelphi', 'Email','Email', 'FamilyName', 'GivenName', 'Address', 'Lodge','Occurences','Comment')
+    createTable('contacts.db','UnsubsNotAdelphi', 'Email','GlRef','Email', 'FamilyName', 'GivenName', 'Address', 'Lodge','Occurences','Comment')
     scanMembers('advanced_current_members_by_mshp_status.csv')
     addBounces('contacts.db','Output','bounces.csv')
     addUnsubscribes('contacts.db','Unsubscribes.csv')
