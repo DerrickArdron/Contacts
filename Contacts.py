@@ -211,12 +211,12 @@ def addUnsubscribes(dbFile, csvFile):
             # we know that the Custom Field 1 holds things other than Gl ref, including P&Tyler's Green so need to handle apostrophe
             if "'" in ccGlRef:
                 ccGlRef = ccGlRef.replace("'","''")
-            # Is the ccGlRef obtained from Unsubscribes in Adelphi
+            # Does the ccGlRef obtained from Unsubscribes occur in Adelphi
             stmt = 'SELECT "Primary email" from Members where "Gl ref" = \'' + ccGlRef +"'"
             cur.execute(stmt)
             adelphiEmail = str(cur.fetchone()).strip()
             if ccGlRef != '' and adelphiEmail.upper() != 'NONE':
-
+                # there is a none blank ccGlRef and it can be found in Adelphi
                 adelphiEmail = adelphiEmail.replace("'",'')
                 adelphiEmail = adelphiEmail.replace(",",'')
                 adelphiEmail = adelphiEmail.replace("(",'')
@@ -224,6 +224,27 @@ def addUnsubscribes(dbFile, csvFile):
                 if adelphiEmail.upper() == ccEmail.upper():
                     dataAdder('addUnsubscribes','contacts.db','Output','GlRef',ccGlRef, UnsubscribedCC = 'Unsubscribed', UnsubEmail = adelphiEmail)
                 else:
+                    givenName = str(row['Last name'])
+                    if "'" in givenName:
+                        givenName = givenName.replace("'","''")
+                    stmt = 'SELECT "ccEmail" from UnsubsNotAdelphi where "Email" = \'' +ccEmail +"'"
+                    cur.execute(stmt)
+                    con.commit()
+                    itemString = str(cur.fetchone())
+                    if itemString.upper() == 'NONE':
+                        dataAdder('addUnsubscribes','contacts.db','UnsubsNotAdelphi','Email', ccEmail, GlRef = ccGlRef, FamilyName = str(row['First name']), GivenName = givenName, Occurences = 1, Comment ='Not found in current Bucks Adelphi')
+                    else:
+                        stmt = 'UPDATE UnsubsNotAdelphi\nSET Occurences = Occurences +1 WHERE Email = \'' + ccEmail +'\''
+            elif ccGlRef == '':
+                stmt = 'SELECT "GlRef" from Members where "email" = \'' + ccEmail +"'"
+                cur.execute(stmt)
+                con.commit()
+                itemString = str(cur.fetchone())
+                if itemString.upper() != 'NONE':
+                    # we have a record in unsubsribes without a ccGlRef but a valid email
+                    dataAdder('addUnsubscribes','contacts.db','Output','GlRef',itemString, UnsubscribedCC = 'Unsubscribed', UnsubEmail = adelphiEmail)
+                else:
+                    # we have a record in unsubsribes without a ccGlRef and without a valid email in Adelphi
                     givenName = str(row['Last name'])
                     if "'" in givenName:
                         givenName = givenName.replace("'","''")
@@ -246,7 +267,7 @@ def addUnsubscribes(dbFile, csvFile):
                 if itemString.upper() == 'NONE':
                     dataAdder('addUnsubscribes','contacts.db','UnsubsNotAdelphi','Email', ccEmail, GlRef = ccGlRef, FamilyName = str(row['First name']), GivenName = givenName, Occurences = 1, Comment ='Not found in current Bucks Adelphi')
                 else:
-                    stmt = 'UPDATE UnsubsNotAdelphi\nSET Occurences = Occurences +1 WHERE Email = \'' + ccEmail +'\''
+                    stmt = 'UPDATE UnsubsNotAdelphi\nSET Occurences += 1 WHERE Email = \'' + ccEmail +'\''
 
 
 
