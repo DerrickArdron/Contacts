@@ -7,8 +7,14 @@ TO DO
 
 '''
 
-import csv, sqlite3, os, da_utils
+import csv, sqlite3, os, da_utils, xlrd
+#from sendmail import mailer
+# from openpyxl import load_workbook
+
 os.system("cls")
+
+SENDER = "dardron@buckspgl.org"
+TEST_RECIPIENT = "derrick.ardron@outlook.com"
 
 def _get_col_datatypes(fin):
     dr = csv.DictReader(fin) # comma is default delimiter
@@ -75,6 +81,8 @@ def csvToDb(csvFile,dbFile,tablename, outputToFile = False):
 
 
         reader = csv.reader(escapingGenerator(fin))
+        reader.__next__()
+
 
         # Generate insert statement:
         stmt = "INSERT INTO \"" + tablename + "\" VALUES(%s);" % ','.join('?' * len(cols))
@@ -314,20 +322,149 @@ def addAdelphi():
             lodgeID = lodgeID[:position]
         dataAdder('addAdelphi','contacts.db','Output','GlRef',rowString.replace("'",'') , LodgeID = lodgeID, FamilyName =  data[1], GivenName = data[2])
 
+def get_secretaries():
+    '''
+    wb = load_workbook(filename = 'secretaries.xlsx')
+    print(wb.sheetnames)
+    sheet = wb.get_sheet_by_name("USE THIS ONE")
+    for row in sheet.iter_rows(min_row=1, min_col=1, max_row=6, max_col=8):
+        for cell in row:
+            print(cell.value)
+    book = xlrd.open_workbook('secretaries.xlsx')
+    sheet = sheet_by_name("USE THIS ONE")
+    print(book.sheet_names())
+'''
+def emails():
+    '''
+    Assembles all the data required by sendmail.py mailer function
+
+    def mailer(sender, recipient, subject, body_text, body_html, attachment):
+    '''
+    con = sqlite3.connect('contacts.db')
+    cur = con.cursor()
+    cur2 = con.cursor()
+    stmt = 'SELECT "AdelphiCode","LC name","Primary email" FROM secretaries'
+    cur.execute(stmt)
+    con.commit()
+    rows = cur.fetchall()
+    for row in rows:
+        sec_email = row[2]
+        stmt2 = 'SELECT * FROM output where "LodgeID" = \'' + row[0] + "'"
+        cur2.execute(stmt2)
+        members = cur2.fetchall()
+        if members:
+            subject = row[0] + ' Provincial Email Failures'
+            with open('Contacts Email Text.TXT', 'r') as reader:
+                body_text = reader.read()
+            with open('Contacts Email Text-2.HTML', 'r') as reader:
+                body_html = reader.read()
+            with open('temp.csv', 'w', newline ='') as csvfile:
+                datawriter = csv.writer(csvfile,delimiter = ",", quotechar = "'")
+                datawriter.writerow(['GlRef', 'GivenName', 'FamilyName','Email','Bounced', 'Unsubscribed'])
+                for m in members:
+                    # 6 =email, either 'No Email' bounced email address
+                    # 7 = bounced reason
+                    # 8 "Unsubscribed"
+                    # 9 UnsubEmail
+                    if m[6] or m[7] or m[8] or m[9]:
+                        if m[6]:
+                            email_to_insert = m[6]
+                        elif m[9]:
+                            email_to_insert = m[9]
+                        else:
+                            email_to_insert = ''
+                    if m[7]:
+                            bounced = m[7]
+                    else:
+                        bounced = ''
+                        unsub = ""
+                    if m[9]:
+                        unsub = m[8]
+                    else:
+                        unsub = ""
+                    datawriter.writerow([m[0], m[3], m[2],email_to_insert, bounced, unsub])
+        mailer(SENDER, sec_email, subject, body_text, body_html, "Bucks PGL Survey v04.pdf", "temp.csv")
+
+    #mailer(SENDER,"..\\password-dardron.txt", TEST_RECIPIENT, subject, body_text, body_html, ["c:\\pyproj\\contacts\\Bucks PGL Survey v04.pdf", "c:\\pyproj\\contacts\\temp.csv"])
+
+
+def mailer(sender, recipient, subject, body_text, body_html, *attachments):
+    print("attachments", attachments)
+    import email,smtplib, ssl, os
+    from email import encoders
+    from email.mime.base import MIMEBase
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    os.system("cls")
+    print("Mailer running")
+    sender_email = sender
+    receiver_email = recipient
+    with open('..\\password-dardron.txt', 'r') as reader:
+        password = reader.read()
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+
+    # Turn these into plain/html MIMEText objects
+    part1 = MIMEText(body_text, "plain")
+    part2 = MIMEText(body_html, "html")
+    message.attach(part1)
+    message.attach(part2)
+    if attachments:
+        print("attachments", attachments)
+        n=3
+        for item in attachments:
+            print("item", item)
+            # Open PDF file in binary mode
+            with open(item, "rb") as attachment:
+                print(attachment)
+
+        # Add file as application/octet-stream
+        # Email client can usually download this automatically as attachment
+                part_number = "part" + str(n)
+                part_number = MIMEBase("application", "octet-stream")
+                part_number.set_payload(attachment.read())
+                # Encode file in ASCII characters to send by email
+                encoders.encode_base64(part_number)
+                # Add header as key/value pair to attachment part
+                part_number.add_header( "Content-Disposition", f"attachment; filename= {item}")
+                message.attach(part_number)
+                n += 1
+    # Add HTML/plain-text parts to MIMEMultipart message
+    # The email client will try to render the last part first
+
+
+    #print(message.as_string())
+    # Create secure connection with server and send email
+    context = ssl.create_default_context()
+    with smtplib.SMTP('smtp-mail.outlook.com', 587) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail('dardron@buckspgl.org',recipient, message.as_string())
+
+
+
+
 
 
 def main():
-    csvToDb("advanced_current_members_by_mshp_status.csv","contacts.db","Members")
+    #csvToDb("advanced_current_members_by_mshp_status.csv","contacts.db","Members")
     #csvToDb("lc_details.csv","contacts.db","Lodges")
-    createTable('contacts.db','Output', 'GlRef','GlRef', 'LodgeID','FamilyName', 'GivenName', 'Address', 'Telephone',  'Email', 'EmailBounceReason', 'UnsubscribedCC', 'UnsubEmail')
-    createTable('contacts.db','UnsubsNotAdelphi', 'Email','GlRef','Email', 'FamilyName', 'GivenName', 'Address', 'Lodge','Occurences','Comment')
-    scanMembers('advanced_current_members_by_mshp_status.csv')
-    addBounces('contacts.db','Output','bounces.csv')
-    addUnsubscribes('contacts.db','Unsubscribes.csv')
-    addAdelphi()
-    output('contacts.db', 'output','output.csv')
-    output('contacts.db', 'UnsubsNotAdelphi','UnsubsNotAdelphi.csv')
+    csvToDb('secretaries.csv','contacts.db','secretaries')
+    #createTable('contacts.db','Output', 'GlRef','GlRef', 'LodgeID','FamilyName', 'GivenName', 'Address', 'Telephone',  'Email', 'EmailBounceReason', 'UnsubscribedCC', 'UnsubEmail')
+    #createTable('contacts.db','UnsubsNotAdelphi', 'Email','GlRef','Email', 'FamilyName', 'GivenName', 'Address', 'Lodge','Occurences','Comment')
+    #scanMembers('advanced_current_members_by_mshp_status.csv')
+    #addBounces('contacts.db','Output','bounces.csv')
+    #addUnsubscribes('contacts.db', 'Unsubscribes.csv')
+    #addAdelphi()
+    #output('contacts.db', 'output','output.csv')
+    #output('contacts.db', 'UnsubsNotAdelphi', 'UnsubsNotAdelphi.csv')
+    #get_secretaries()
+    emails()
 
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     main()

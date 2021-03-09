@@ -1,4 +1,3 @@
-
 def createTable(dbFile, tableName, primaryKey, *cols):
     con = sqlite3.connect(dbFile)
     cur = con.cursor()

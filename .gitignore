@@ -3,3 +3,5 @@
 *.db
 *.xlsx
 __*
+*.pdf
+*.docx
