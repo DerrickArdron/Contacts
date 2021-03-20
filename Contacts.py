@@ -320,17 +320,19 @@ Adds the Adelphi Audit to the Output Table
             elif data1 =='':
                 continue
             else:
-                stmt ='SELECT "Adelphi_1" FROM Output WHERE "GlRef" = \'' + glRef + "'"
-                if glRef =='10155590':
-                    print("~323 stmt =", stmt)
+                stmt ='SELECT GlRef, Adelphi_1 FROM Output WHERE "GlRef" = \'' + glRef + "'"
+                #if glRef =='10155590':
+                print("~323 stmt =", stmt)
                 cur.execute(stmt)
                 con.commit()
                 itemString = str(cur.fetchone())
-                if glRef =='10155590':
-                    print("~326 Adelphi_1 =", itemString)
+                print("~328 itemstring =", itemString)
+                m = re.search('None', itemString)
+                #if glRef =='10155590':
+
                 if glRef =='10155590':
                     print("~329", data1, data2)
-                if itemString.upper() == 'NONE':
+                if m:
                     dataAdder('addAudit','contacts.db','Output','GlRef', glRef,Adelphi_1 = data1+' - ' + data2)
                 else:
                     dataAdder('addAudit','contacts.db','Output','GlRef', glRef,Adelphi_2 = data1+' - ' + data2)
