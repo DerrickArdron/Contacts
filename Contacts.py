@@ -7,7 +7,8 @@ TO DO
 
 '''
 
-import csv, sqlite3, os, da_utils, xlrd
+#import csv, sqlite3, os, da_utils, xlrd, re
+import csv, sqlite3, os, re
 #from sendmail import mailer
 # from openpyxl import load_workbook
 
@@ -119,6 +120,7 @@ def createTable(dbFile, tableName, primaryKey, *cols):
 def dataAdder(caller,dbFile, table, pKeyName,pKey, **other):
     # print('~112',caller, dbFile, table, pKeyName, pKey, other)
     con = sqlite3.connect(dbFile)
+    con.isolation_level = None
     cur = con.cursor()
     keyStr = ''
     valueStr = ''
@@ -145,9 +147,11 @@ def dataAdder(caller,dbFile, table, pKeyName,pKey, **other):
             subStmt = subStmt + key + ' = \'' + value +'\','
         subStmt = subStmt[:-1]
         stmt = 'UPDATE Output\nSET '+subStmt +'\nWHERE GlRef = \'' + pKey +'\''
-    #print('stmt ~138', stmt)
+    if caller == 'addAudit' and pKey == '10155590':
+        print('~148 stmt =', stmt)
     cur.execute(stmt)
     con.commit()
+    con.close()
 
 
 def scanMembers(csvFile):
@@ -185,7 +189,7 @@ def addBounces(dbFile, table, csvFile):
         reader = csv.DictReader(bouncesCSV)
         for row in reader:
             glRef  = str(row['Custom Field 1'])
-            email = str(row['Email address - other'])
+            email = str(row['Email address'])
             bounceReason  = str(row['Bounce Reason'])
             dataAdder('addBounces','contacts.db','Output','GlRef',glRef.replace("'",'') , Email = email, EmailBounceReason =  bounceReason)
             '''
@@ -215,7 +219,7 @@ def addUnsubscribes(dbFile, csvFile):
         reader = csv.DictReader(source)
         for row in reader:
             ccGlRef = str(row['Custom Field 1']).strip()
-            ccEmail = str(row['Email address - other']).strip()
+            ccEmail = str(row['Email address']).strip()
             # we know that the Custom Field 1 holds things other than Gl ref, including P&Tyler's Green so need to handle apostrophe
             if "'" in ccGlRef:
                 ccGlRef = ccGlRef.replace("'","''")
@@ -278,7 +282,65 @@ def addUnsubscribes(dbFile, csvFile):
                     stmt = 'UPDATE UnsubsNotAdelphi\nSET Occurences += 1 WHERE Email = \'' + ccEmail +'\''
 
 
+def addAudit(dbFile, table, csvFile):
+    '''
+Adds the Adelphi Audit to the Output Table
+    '''
+    con = sqlite3.connect(dbFile)
+    cur = con.cursor()
+    with open(csvFile,mode='r', newline = '') as auditCSV:
+        auditCSV.seek(0)
+        reader = csv.DictReader(auditCSV)
+        newGlRef = 0
+        for row in reader:
+            glRef = str(row['Gl Ref'])
+            data1 = str(row['Data1'])
+            data2 = str(row['Data2'])
+            if glRef =='10155590':
+                print("~297", data1, data2)
+            if data1 == 'Memberships My Province':
+                m = re.search('L\d{3,4}',data2)
+                lodgeID = m.group()
+                #print('~296',lodgeID )
+                '''
+                if m:
+                    stmt ='SELECT "GL Ref" FROM Output WHERE "Gl Ref" = \'' + glRef + "'"
+                    print('~297',stmt)
+                    cur.execute(stmt)
+                    con.commit()
+                    itemString = str(cur.fetchone())
+                    if itemString.upper() == 'NONE':
+                        newGlRef = 1
 
+                    #This member is not in Output an so the next lines in which the same GL Ref appears need to be recorded in
+                        dataAdder('addAudit','contacts.db','Output','GlRef', glRef, Adelphi_1 = data2)
+                '''
+            elif data1 == 'Memberships Other Provinces':
+                continue
+            elif data1 =='':
+                continue
+            else:
+                stmt ='SELECT "Adelphi_1" FROM Output WHERE "GlRef" = \'' + glRef + "'"
+                if glRef =='10155590':
+                    print("~323 stmt =", stmt)
+                cur.execute(stmt)
+                con.commit()
+                itemString = str(cur.fetchone())
+                if glRef =='10155590':
+                    print("~326 Adelphi_1 =", itemString)
+                if glRef =='10155590':
+                    print("~329", data1, data2)
+                if itemString.upper() == 'NONE':
+                    dataAdder('addAudit','contacts.db','Output','GlRef', glRef,Adelphi_1 = data1+' - ' + data2)
+                else:
+                    dataAdder('addAudit','contacts.db','Output','GlRef', glRef,Adelphi_2 = data1+' - ' + data2)
+
+
+'''
+            email = str(row['Email address'])
+            bounceReason  = str(row['Bounce Reason'])
+            dataAdder('addBounces','contacts.db','Output','GlRef',glRef.replace("'",'') , Email = email, EmailBounceReason =  bounceReason)
+'''
 def output(dbFile, table, fileName):
     con = sqlite3.connect(dbFile)
     cur = con.cursor()
@@ -314,13 +376,15 @@ def addAdelphi():
         rowString = rowString.replace(')', '')
         rowString = rowString.replace(',', '')
         stmt = 'SELECT "Subscr mshps my prov", "Family name", "Given name" FROM Members WHERE "Gl Ref" = ' + rowString
+        #print("addAdelphi, "+ stmt)
         cur.execute(stmt)
         data = cur.fetchone()
-        lodgeID = data[0]
-        position = lodgeID.find(',')
-        if position > 0:
-            lodgeID = lodgeID[:position]
-        dataAdder('addAdelphi','contacts.db','Output','GlRef',rowString.replace("'",'') , LodgeID = lodgeID, FamilyName =  data[1], GivenName = data[2])
+        if data is not None:
+            lodgeID = data[0]
+            position = lodgeID.find(',')
+            if position > 0:
+                lodgeID = lodgeID[:position]
+            dataAdder('addAdelphi','contacts.db','Output','GlRef',rowString.replace("'",'') , LodgeID = lodgeID, FamilyName =  data[1], GivenName = data[2])
 
 def get_secretaries():
     '''
@@ -450,19 +514,23 @@ def mailer(sender, recipient, subject, body_text, body_html, *attachments):
 
 
 def main():
-    #csvToDb("advanced_current_members_by_mshp_status.csv","contacts.db","Members")
+
+    csvToDb("advanced_current_members_by_mshp_status.csv","contacts.db","Members")
     #csvToDb("lc_details.csv","contacts.db","Lodges")
     csvToDb('secretaries.csv','contacts.db','secretaries')
-    #createTable('contacts.db','Output', 'GlRef','GlRef', 'LodgeID','FamilyName', 'GivenName', 'Address', 'Telephone',  'Email', 'EmailBounceReason', 'UnsubscribedCC', 'UnsubEmail')
-    #createTable('contacts.db','UnsubsNotAdelphi', 'Email','GlRef','Email', 'FamilyName', 'GivenName', 'Address', 'Lodge','Occurences','Comment')
-    #scanMembers('advanced_current_members_by_mshp_status.csv')
-    #addBounces('contacts.db','Output','bounces.csv')
-    #addUnsubscribes('contacts.db', 'Unsubscribes.csv')
-    #addAdelphi()
-    #output('contacts.db', 'output','output.csv')
-    #output('contacts.db', 'UnsubsNotAdelphi', 'UnsubsNotAdelphi.csv')
-    #get_secretaries()
-    emails()
+    createTable('contacts.db','Output', 'GlRef','GlRef', 'LodgeID','FamilyName', 'GivenName', 'Address', 'Telephone',  'Email', 'EmailBounceReason', 'UnsubscribedCC', 'UnsubEmail', 'Adelphi_1', 'Adelphi_2')
+    createTable('contacts.db','UnsubsNotAdelphi', 'Email','GlRef','Email', 'FamilyName', 'GivenName', 'Address', 'Lodge','Occurences','Comment')
+    scanMembers('advanced_current_members_by_mshp_status.csv')
+    addBounces('contacts.db','Output','bounces.csv')
+    addUnsubscribes('contacts.db', 'Unsubscribes.csv')
+    addAudit('contacts.db', 'Output', 'Adelphi Audit.csv')
+    # Now add basicdata to contacts.db output table
+
+    addAdelphi()
+    output('contacts.db', 'output','output.csv')
+    output('contacts.db', 'UnsubsNotAdelphi', 'UnsubsNotAdelphi.csv')
+    get_secretaries()
+    #emails()
 
 
 
